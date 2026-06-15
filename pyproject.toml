@@ -5,7 +5,7 @@ description = "Monitoring tools for running jobs."
 authors = [{ name = "QuakeCoRE", email = "quakecoresoft@canterbury.ac.nz" }]
 readme = "README.md"
 keywords = ['python']
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.13,<4.0"
 classifiers = [
   "Intended Audience :: Developers",
   "Programming Language :: Python",
@@ -17,11 +17,15 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+dependencies = [
+    "matplotlib>=3.10.5",
+    "pluralizer>=2.0.0",
+    "typer>=0.16.0",
+]
 
 [project.urls]
-Homepage = "https://ucgmsim.github.io/monitoring/"
 Repository = "https://github.com/ucgmsim/monitoring"
-Documentation = "https://ucgmsim.github.io/monitoring/"
+
 
 [dependency-groups]
 dev = [
@@ -44,13 +48,13 @@ packages = ["monitoring"]
 
 [tool.ty.environment]
 python = "./.venv"
-python-version = "3.9"
+python-version = "3.13"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py313"
 line-length = 120
 fix = true
 
