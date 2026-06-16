@@ -1,9 +1,8 @@
-from matplotlib import pyplot as plt
-from pluralizer import Pluralizer
-from matplotlib.axes import Axes
 from datetime import datetime, timedelta
 
-from matplotlib.dates import MinuteLocator, DateFormatter
+from matplotlib.axes import Axes
+from matplotlib.dates import DateFormatter, date2num
+from pluralizer import Pluralizer
 
 
 def burndown(
@@ -52,33 +51,32 @@ def burndown(
     plural = pluraliser.plural(task_units)
     start_time = start_time or timestamps[0]
     latest = max(timestamps)
-    run_time = (latest - start_time).seconds
+    run_time = (latest - start_time).total_seconds()
     avg_rate = completed_tasks / run_time
 
     time_required = task_count / avg_rate
     projected_endpoint = start_time + timedelta(seconds=time_required)
     ax.plot(
-        [start_time, projected_endpoint],  # type: ignore
+        [date2num(start_time), date2num(projected_endpoint)],
         [task_count, 0],
         linestyle="--",
         label=f"Projected {plural} remaining",
     )
     if deadline:
         ax.plot(
-            [start_time, deadline],  # type: ignore
+            [date2num(start_time), date2num(deadline)],
             [task_count, 0],
             label=f"Ideal {plural} remaining",
         )
-        if projected_endpoint > deadline:
-            ax.axvline(
-                deadline,  # type: ignore
-                ymin=0,
-                ymax=task_count,
-                label="Deadline",
-            )
+        ax.axvline(
+            date2num(deadline),
+            ymin=0,
+            ymax=1,
+            label="Deadline",
+        )
 
     ax.plot(
-        timestamps,  # type: ignore
+        date2num(timestamps),
         task_counts,
         marker="o",
         linestyle="-",
@@ -89,12 +87,15 @@ def burndown(
     xlim_max = projected_endpoint
     if deadline and deadline > projected_endpoint:
         xlim_max = deadline
+    xlim_min_num = date2num(start_time)
+    xlim_max_num = date2num(xlim_max)
+    xlim_padding = max((xlim_max_num - xlim_min_num) * 0.02, 1 / (24 * 60))
     ax.set_xlim(
-        start_time,  # type: ignore
-        xlim_max,  # type: ignore
+        xlim_min_num,
+        xlim_max_num + xlim_padding,
     )
-    ax.set_xlabel(f"Time")
+    ax.set_xlabel("Time")
     ax.tick_params("x", rotation=45)
     ax.xaxis.set_major_formatter(DateFormatter("%Y-%m-%d %H:%M:%S", tz=start_time.tzinfo))
-    ax.set_ylabel(f"{plural} completed")
+    ax.set_ylabel(f"{plural} remaining")
     ax.legend()
