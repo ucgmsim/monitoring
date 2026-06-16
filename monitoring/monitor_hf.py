@@ -1,4 +1,27 @@
-"""Plot high-frequency burndown charts."""
+"""Plot high-frequency burndown charts.
+
+Example
+-------
+Run the HF monitor against a JSON log and the planned station file:
+
+    uv run python -m monitoring.monitor_hf \
+        /path/to/hf-job-log.jsonl \
+        /path/to/planned-stations.ll \
+        "DateTime of run start, e.g. YYYY-MM-DD:HH:MM:SS" \
+        "planned run time in hours, e.g. 96 for 4 days" \
+        /path/to/hf-burndown.png
+
+Specific example
+----------------
+Command used for the Clarence HF monitoring run:
+
+    uv run python -m monitoring.monitor_hf \
+        /home/arr65/data/hf_monitoring/job.out \
+        /home/arr65/data/hf_monitoring/stations_input.ll \
+        2026-06-15T00:58:10 \
+        96 \
+        /home/arr65/data/hf_monitoring/job.out.png
+"""
 
 import json
 from dataclasses import dataclass
@@ -33,6 +56,7 @@ class HFProgressSummary:
     stations_remaining: int
     average_seconds_per_station: float | None
     estimated_seconds_remaining: float | None
+    estimated_total_wall_clock_seconds: float | None
     estimated_completion_time: datetime | None
 
 
@@ -143,11 +167,13 @@ def build_progress_summary(
             stations_remaining=stations_remaining,
             average_seconds_per_station=None,
             estimated_seconds_remaining=None,
+            estimated_total_wall_clock_seconds=None,
             estimated_completion_time=None,
         )
 
     average_seconds_per_station = elapsed_seconds / stations_logged
     estimated_seconds_remaining = stations_remaining * average_seconds_per_station
+    estimated_total_wall_clock_seconds = station_count * average_seconds_per_station
     estimated_completion_time = latest_timestamp + timedelta(seconds=estimated_seconds_remaining)
     return HFProgressSummary(
         station_count=station_count,
@@ -155,6 +181,7 @@ def build_progress_summary(
         stations_remaining=stations_remaining,
         average_seconds_per_station=average_seconds_per_station,
         estimated_seconds_remaining=estimated_seconds_remaining,
+        estimated_total_wall_clock_seconds=estimated_total_wall_clock_seconds,
         estimated_completion_time=estimated_completion_time,
     )
 
@@ -181,10 +208,14 @@ def print_progress_summary(summary: HFProgressSummary) -> None:
     print(f"Stations remaining: {summary.stations_remaining}")
     if summary.average_seconds_per_station is None or summary.estimated_seconds_remaining is None:
         print("Average time per station: unavailable")
+        print("Estimated total wall clock time: unavailable")
         print("Estimated time until completion: unavailable")
         return
 
     print(f"Average time per station: {summary.average_seconds_per_station:.2f}s")
+    if summary.estimated_total_wall_clock_seconds is not None:
+        total_wall_clock = format_duration(summary.estimated_total_wall_clock_seconds)
+        print(f"Estimated total wall clock time: {total_wall_clock}")
     print(f"Estimated time until completion: {format_duration(summary.estimated_seconds_remaining)}")
     if summary.estimated_completion_time is not None:
         completion_time = summary.estimated_completion_time.isoformat(sep=" ", timespec="seconds")
