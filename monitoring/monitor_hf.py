@@ -64,6 +64,7 @@ _HF_JSON_STATION_EVENT = "running hf"
 _HF_TIMESTAMPS_ERROR = "Could not parse any station progress timestamps from log file."
 _STATION_COUNT_ERROR = "Could not parse any station records from station file."
 _STATION_LINE_ERROR = "Could not parse station file line. Expected 'lon lat station_name'."
+_HF_RECOMPILE_ERROR = "need to recompile with larger array size, exiting..."
 
 
 def parse_hf_json_timestamp(value: object) -> datetime | None:
@@ -138,6 +139,8 @@ def parse_hf_log(log_file: IO[str]) -> HFLog:
     timestamps = []
     stations = set()
     for line in log_file:
+        if _HF_RECOMPILE_ERROR in line:
+            raise RuntimeError(f"Simulation failed: {_HF_RECOMPILE_ERROR!r} detected in log file.")
         if json_record := parse_hf_json_record(line):
             station, timestamp = json_record
             if station not in stations:
