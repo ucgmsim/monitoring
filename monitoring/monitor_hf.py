@@ -1,5 +1,7 @@
 """Plot high-frequency burndown charts.
 
+The job start time is read automatically from the earliest log record.
+
 Example
 -------
 Run the HF monitor against a JSON log and the planned station file:
@@ -7,7 +9,6 @@ Run the HF monitor against a JSON log and the planned station file:
     uv run python -m monitoring.monitor_hf \
         /path/to/hf-job-log.jsonl \
         /path/to/planned-stations.ll \
-        "DateTime of run start, e.g. YYYY-MM-DD:HH:MM:SS" \
         "planned run time in hours, e.g. 96 for 4 days" \
         /path/to/hf-burndown.png
 
@@ -18,7 +19,6 @@ Command used for the Clarence HF monitoring run:
     uv run python -m monitoring.monitor_hf \
         /home/arr65/data/hf_monitoring/job.out \
         /home/arr65/data/hf_monitoring/stations_input.ll \
-        2026-06-15T00:58:10 \
         96 \
         /home/arr65/data/hf_monitoring/job.out.png
 """
@@ -45,6 +45,9 @@ class HFLog:
 
     timestamps: list[datetime]
     """The timestamps of station progress records."""
+
+    start_time: datetime
+    """The start time of the job, taken from the earliest log record."""
 
 
 @dataclass
@@ -77,15 +80,19 @@ def parse_hf_json_timestamp(value: object) -> datetime | None:
         return None
 
 
-def parse_hf_json_record(line: str) -> tuple[str, datetime] | None:
-    """Parse a station progress record from a JSON log line."""
+def parse_hf_json_line(line: str) -> dict | None:
+    """Parse a JSON log line into a record dictionary."""
     try:
         record = json.loads(line)
     except JSONDecodeError:
         return None
-
     if not isinstance(record, dict):
         return None
+    return record
+
+
+def parse_hf_station_event(record: dict) -> tuple[str, datetime] | None:
+    """Parse a station progress event from a JSON log record."""
     if record.get("event") != _HF_JSON_STATION_EVENT:
         return None
     station = record.get("station")
@@ -138,19 +145,31 @@ def parse_hf_log(log_file: IO[str]) -> HFLog:
     """
     timestamps = []
     stations = set()
+    start_time = None
     for line in log_file:
         if _HF_RECOMPILE_ERROR in line:
             raise RuntimeError(f"Simulation failed: {_HF_RECOMPILE_ERROR!r} detected in log file.")
-        if json_record := parse_hf_json_record(line):
-            station, timestamp = json_record
+        record = parse_hf_json_line(line)
+        if record is None:
+            continue
+
+        # The start time is the earliest timestamp of any log record.
+        record_timestamp = parse_hf_json_timestamp(record.get("timestamp"))
+        if record_timestamp and (start_time is None or record_timestamp < start_time):
+            start_time = record_timestamp
+
+        if station_event := parse_hf_station_event(record):
+            station, timestamp = station_event
             if station not in stations:
                 timestamps.append(timestamp)
             stations.add(station)
 
     if not timestamps:
         raise ValueError(_HF_TIMESTAMPS_ERROR)
+    if start_time is None:
+        start_time = min(timestamps)
     timestamps.sort()
-    return HFLog(timestamps=timestamps)
+    return HFLog(timestamps=timestamps, start_time=start_time)
 
 
 def build_progress_summary(
@@ -229,14 +248,13 @@ def print_progress_summary(summary: HFProgressSummary) -> None:
 def hf_burndown(
     hflog_path: Annotated[Path, typer.Argument(help="Path to HF Log file to analyse.")],
     station_file: Annotated[Path, typer.Argument(help="Path to station file for the planned HF job.")],
-    start_time: Annotated[datetime, typer.Argument(help="Start time for job.")],
     running_time: Annotated[float, typer.Argument(help="Total planned time for the job (hours).")],
     output: Annotated[Path, typer.Argument(help="Output path for burndown chart.")],
     timezone: Annotated[
         str | None,
         typer.Option(
             "--tz",
-            help="IANA time zone name for start time (if none, start time has no timezone information). If provided, times will be converted to local time.",
+            help="IANA time zone name to display times in. If none, times are shown in UTC without timezone information.",
         ),
     ] = None,
     title: Annotated[str | None, typer.Option(help="Set plot title.")] = None,
@@ -249,15 +267,13 @@ def hf_burndown(
         HF frequency log path.
     station_file : Path
         Station file path for the planned HF job.
-    start_time : datetime
-        Start time of the job.
     running_time : float
         Time (in hours) for the job.
     output : Path
         Chart output directory.
     timezone : str | None
-        Timezone for the start time (and times in the log file). If
-        provided, times are translated to local time.
+        Time zone to display times in. If provided, times are converted to
+        this zone; otherwise they are shown in UTC without timezone info.
     title : str | None
         Title for the plot.
     """
@@ -268,20 +284,17 @@ def hf_burndown(
         station_count = parse_station_count(f)
 
     timestamps = hf_log.timestamps
+    start_time = hf_log.start_time
     if timezone:
         try:
             time_zone = ZoneInfo(timezone)
         except ZoneInfoNotFoundError:
             print(f"Invalid time zone: '{timezone}'.")
             return
-        start_time = start_time.replace(tzinfo=time_zone)
-        local_timezone = datetime.now().astimezone().tzinfo
-        start_time = start_time.astimezone(local_timezone)
-        timestamps = [
-            (timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=time_zone)).astimezone(local_timezone)
-            for timestamp in timestamps
-        ]
+        start_time = start_time.astimezone(time_zone)
+        timestamps = [timestamp.astimezone(time_zone) for timestamp in timestamps]
     else:
+        start_time = start_time.replace(tzinfo=None)
         timestamps = [timestamp.replace(tzinfo=None) for timestamp in timestamps]
 
     print_progress_summary(build_progress_summary(station_count, timestamps, start_time))
